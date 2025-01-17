@@ -84,6 +84,9 @@ const Login = () => {
     registerData,
     loginError,
     registerError,
+    loginIsSuccess,
+    registerIsSuccess,
+    navigate,
   ]);
 
   return (

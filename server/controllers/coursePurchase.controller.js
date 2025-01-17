@@ -20,11 +20,11 @@ export const createOrder = async (req, res) => {
 
     const amount = course.coursePrice * 100; // Amount in paise
 
-    // Create a new order in Razorpay
+    // Create a Razorpay order
     const options = {
       amount: amount,
       currency: "INR",
-      receipt: `receipt_${courseId}_${Date.now()}`,
+      receipt: `rcpt_${courseId}_${Date.now()}`.slice(0, 40),
     };
     const order = await razorpay.orders.create(options);
 
@@ -44,16 +44,22 @@ export const createOrder = async (req, res) => {
     });
     await newPurchase.save();
 
+    // Return Razorpay order details
     return res.status(200).json({
       success: true,
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
+      keyId: process.env.TEST_KEY_ID, // Public Razorpay Key ID
+      name: course.courseTitle,
+      description: "Purchase this course to unlock content",
     });
   } catch (error) {
-    console.log(error);
+    console.error("Error creating order:", error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
 export const razorpayWebhook = async (req, res) => {
   try {
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -109,8 +115,64 @@ export const razorpayWebhook = async (req, res) => {
 
     res.status(200).send("Webhook received");
   } catch (error) {
-    console.error(error);
+    console.error("Error processing webhook:", error);
     res.status(500).send("Internal Server Error");
   }
 };
 
+export const getCourseDetailWithPurchaseStatus = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.id;
+
+    // Fetch course details
+    const course = await Course.findById(courseId)
+      .populate({ path: "creator" })
+      .populate({ path: "lectures" });
+
+    if (!course) {
+      return res.status(404).json({ message: "Course not found!" });
+    }
+
+    // Check if the user has purchased the course
+    const purchased = await CoursePurchase.findOne({
+      userId,
+      courseId,
+      status: "completed", // Ensure the status is 'completed'
+    });
+
+    return res.status(200).json({
+      course,
+      purchased: !!purchased, // true if purchased, false otherwise
+    });
+  } catch (error) {
+    console.error("Error fetching course details:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const getAllPurchasedCourse = async (req, res) => {
+  try {
+    const userId = req.id;
+
+    // Fetch all completed purchases for the user
+    const purchasedCourses = await CoursePurchase.find({
+      userId,
+      status: "completed", // Only fetch completed purchases
+    }).populate("courseId");
+
+    if (!purchasedCourses || purchasedCourses.length === 0) {
+      return res.status(404).json({
+        message: "No purchased courses found!",
+        purchasedCourses: [],
+      });
+    }
+
+    return res.status(200).json({
+      purchasedCourses,
+    });
+  } catch (error) {
+    console.error("Error fetching purchased courses:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};

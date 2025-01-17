@@ -3,6 +3,7 @@ import { Button } from "./ui/button";
 import { useCreateCheckoutSessionMutation } from "@/features/api/purchaseApi";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import Razorpay from "razorpay";
 
 const BuyCourseButton = ({ courseId }) => {
   const [
@@ -10,17 +11,55 @@ const BuyCourseButton = ({ courseId }) => {
     { data, isLoading, isSuccess, isError, error },
   ] = useCreateCheckoutSessionMutation();
 
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const purchaseCourseHandler = async () => {
-    await createCheckoutSession(courseId);
+    const loaded = await loadRazorpayScript();
+    if (!loaded) {
+      toast.error("Failed to load Razorpay. Please try again.");
+      return;
+    }
+
+    const { orderId, amount, currency, keyId, name, description } = data;
+
+    const options = {
+      key: keyId,
+      amount: amount,
+      currency: currency,
+      name: name,
+      description: description,
+      order_id: orderId,
+      handler: async function (response) {
+        // Handle the payment success
+        console.log("Payment Successful:", response);
+        toast.success("Payment Successful! Enjoy your course.");
+        // Optionally, call an API to verify the payment
+      },
+      prefill: {
+        name: "Your Name",
+        email: "your-email@example.com",
+        contact: "9999999999",
+      },
+      theme: {
+        color: "#3399cc",
+      },
+    };
+
+    const rzp = new Razorpay(options);
+    rzp.open();
   };
 
   useEffect(() => {
     if (isSuccess) {
-      if (data?.url) {
-        window.location.href = data.url; // Redirect to stripe checkout url
-      } else {
-        toast.error("Invalid response from server.");
-      }
+      purchaseCourseHandler();
     }
     if (isError) {
       toast.error(error?.data?.message || "Failed to create checkout session");
@@ -30,7 +69,7 @@ const BuyCourseButton = ({ courseId }) => {
   return (
     <Button
       disabled={isLoading}
-      onClick={purchaseCourseHandler}
+      onClick={() => createCheckoutSession({ courseId })}
       className="w-full"
     >
       {isLoading ? (
